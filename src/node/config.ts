@@ -4,7 +4,11 @@ import chalk from 'chalk'
 import dotenv, { DotenvParseOutput } from 'dotenv'
 import dotenvExpand from 'dotenv-expand'
 import { Options as RollupPluginVueOptions } from 'rollup-plugin-vue'
-import { CompilerOptions, SFCStyleCompileOptions } from '@vue/compiler-sfc'
+import {
+  CompilerOptions,
+  SFCStyleCompileOptions,
+  SFCAsyncStyleCompileOptions
+} from '@vue/compiler-sfc'
 import Rollup, {
   InputOptions as RollupInputOptions,
   OutputOptions as RollupOutputOptions,
@@ -18,6 +22,14 @@ import { DepOptimizationOptions } from './optimizer'
 import { IKoaProxiesOptions } from 'koa-proxies'
 import { ServerOptions } from 'https'
 import { lookupFile } from './utils'
+
+export type PreprocessLang = NonNullable<
+  SFCStyleCompileOptions['preprocessLang']
+>
+
+export type PreprocessOptions = SFCStyleCompileOptions['preprocessOptions']
+
+export type CssPreprocessOptions = Record<PreprocessLang, PreprocessOptions>
 
 export { Resolver, Transform }
 
@@ -116,7 +128,11 @@ export interface SharedConfig {
   /**
    * CSS preprocess options
    */
-  cssPreprocessOptions?: SFCStyleCompileOptions['preprocessOptions']
+  cssPreprocessOptions?: CssPreprocessOptions
+  /**
+   * CSS modules options
+   */
+  cssModuleOptions?: SFCAsyncStyleCompileOptions['modulesOptions']
   /**
    * Enable esbuild
    * @default true
@@ -211,8 +227,9 @@ export interface BuildConfig extends SharedConfig {
    */
   minify?: boolean | 'terser' | 'esbuild'
   /**
-   * Build for server-side rendering
-   * @default false
+   * Build for server-side rendering, only as a CLI flag
+   * for programmatic usage, use `ssrBuild` directly.
+   * @internal
    */
   ssr?: boolean
 
@@ -265,6 +282,11 @@ export interface BuildConfig extends SharedConfig {
    * added to the index.html for the chunk passed in
    */
   shouldPreload?: (chunk: OutputChunk) => boolean
+  /**
+   * Enable 'rollup-plugin-vue'
+   * @default true
+   */
+  enableRollupPluginVue?: boolean
 }
 
 export interface UserConfig extends BuildConfig, ServerConfig {
@@ -282,6 +304,7 @@ export interface Plugin
     | 'vueCustomBlockTransforms'
     | 'rollupInputOptions'
     | 'rollupOutputOptions'
+    | 'enableRollupPluginVue'
   > {}
 
 export type ResolvedConfig = UserConfig & {
@@ -441,15 +464,33 @@ function resolvePlugin(config: UserConfig, plugin: Plugin): UserConfig {
       ...config.vueCustomBlockTransforms,
       ...plugin.vueCustomBlockTransforms
     },
-    rollupInputOptions: {
-      ...config.rollupInputOptions,
-      ...plugin.rollupInputOptions
-    },
-    rollupOutputOptions: {
-      ...config.rollupOutputOptions,
-      ...plugin.rollupOutputOptions
+    rollupInputOptions: mergeRollupOptions(
+      config.rollupInputOptions,
+      plugin.rollupInputOptions
+    ),
+    rollupOutputOptions: mergeRollupOptions(
+      config.rollupOutputOptions,
+      plugin.rollupOutputOptions
+    ),
+    enableRollupPluginVue:
+      config.enableRollupPluginVue || plugin.enableRollupPluginVue
+  }
+}
+
+function mergeRollupOptions(to: any, from: any) {
+  if (!to) return from
+  if (!from) return to
+  const res: any = { ...to }
+  for (const key in from) {
+    const existing = res[key]
+    const toMerge = from[key]
+    if (Array.isArray(existing) || Array.isArray(toMerge)) {
+      res[key] = [].concat(existing, toMerge).filter(Boolean)
+    } else {
+      res[key] = toMerge
     }
   }
+  return res
 }
 
 function loadEnv(mode: string, root: string): Record<string, string> {

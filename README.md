@@ -80,7 +80,7 @@ Vite tries to mirror the default configuration in [vue-cli](http://cli.vuejs.org
 
 ### Bare Module Resolving
 
-Native ES imports doesn't support bare module imports like
+Native ES imports don't support bare module imports like
 
 ```js
 import { createApp } from 'vue'
@@ -222,6 +222,25 @@ Or import them from JavaScript:
 
 ```js
 import './style.scss'
+```
+
+#### Passing Options to Pre-Processor
+
+> 1.0.0-beta.9+
+> And if you want to pass options to the pre-processor, you can do that using the `cssPreprocessOptions` option in the config (see [Config File](#config-file) below).
+> For example, to pass some shared global variables to all your Less styles:
+
+```js
+// vite.config.js
+module.exports = {
+  cssPreprocessOptions: {
+    less: {
+      modifyVars: {
+        'preprocess-custom-color': 'green'
+      }
+    }
+  }
+}
 ```
 
 ### JSX

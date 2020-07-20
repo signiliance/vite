@@ -2,6 +2,7 @@ import { ServerPlugin } from './server'
 import { Plugin as RollupPlugin } from 'rollup'
 import { parseWithQuery, readBody, isImportRequest } from './utils'
 import { SourceMap, mergeSourceMap } from './server/serverPluginSourceMap'
+import { InternalResolver } from './resolver'
 
 type ParsedQuery = Record<string, string | string[] | undefined>
 
@@ -24,6 +25,10 @@ interface TransformTestContext {
    */
   isImport: boolean
   isBuild: boolean
+  /**
+   * Indicates that the file for this request was not modified since last call.
+   */
+  notModified?: true
 }
 
 export interface TransformContext extends TransformTestContext {
@@ -48,7 +53,8 @@ export type CustomBlockTransform = TransformFn
 
 export function createServerTransformPlugin(
   transforms: Transform[],
-  customBlockTransforms: Record<string, CustomBlockTransform>
+  customBlockTransforms: Record<string, CustomBlockTransform>,
+  resolver: InternalResolver
 ): ServerPlugin {
   return ({ app }) => {
     if (!transforms.length && !Object.keys(customBlockTransforms).length) {
@@ -62,19 +68,25 @@ export function createServerTransformPlugin(
         return
       }
 
-      const { url, path, query } = ctx
+      let { url, path, query, __notModified } = ctx
+      const id = resolver.requestToFile(url)
+      path = resolver.requestToFile(path)
       const isImport = isImportRequest(ctx)
       const isBuild = false
       let code: string = ''
 
       for (const t of transforms) {
         const transformContext: TransformTestContext = {
-          id: url,
+          id,
           path,
           query,
           isImport,
           isBuild
         }
+        if (__notModified) {
+          transformContext.notModified = true
+        }
+
         if (t.test(transformContext)) {
           code = code || (await readBody(ctx.body))!
           const result = await t.transform({
@@ -102,7 +114,7 @@ export function createServerTransformPlugin(
           code = code || (await readBody(ctx.body))!
           ctx.body = await t({
             code,
-            id: url,
+            id,
             path,
             query,
             isImport,

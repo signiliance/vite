@@ -41,9 +41,13 @@ export const parseWithQuery = (
     query: {}
   }
 }
+export const bareImportRE = /^[^\/\.]/
 
 const externalRE = /^(https?:)?\/\//
 export const isExternalUrl = (url: string) => externalRE.test(url)
+
+const dataUrlRE = /^\s*data:/i
+export const isDataUrl = (url: string) => dataUrlRE.test(url)
 
 const imageRE = /\.(png|jpe?g|gif|svg|ico|webp)(\?.*)?$/
 const mediaRE = /\.(mp4|webm|ogg|mp3|wav|flac|aac)(\?.*)?$/

@@ -435,12 +435,16 @@ export function resolveOptimizedModule(
 
   const cacheDir = resolveOptimizedCacheDir(root)
   if (!cacheDir) return
-  if (!path.extname(id)) id += '.js'
-  const file = path.join(cacheDir, id)
-  if (fs.existsSync(file) && fs.statSync(file).isFile()) {
-    viteOptimizedMap.set(cacheKey, file)
-    return file
+
+  const tryResolve = (file: string) => {
+    file = path.join(cacheDir, file)
+    if (fs.existsSync(file) && fs.statSync(file).isFile()) {
+      viteOptimizedMap.set(cacheKey, file)
+      return file
+    }
   }
+
+  return tryResolve(id) || tryResolve(id + '.js')
 }
 
 interface NodeModuleInfo {
