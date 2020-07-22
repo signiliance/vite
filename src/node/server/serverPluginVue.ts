@@ -8,7 +8,6 @@ import {
   SFCTemplateBlock,
   SFCStyleBlock,
   SFCStyleCompileResults,
-  CompilerOptions,
   SFCStyleCompileOptions,
   BindingMetadata,
   CompilerError,
@@ -37,6 +36,7 @@ import { parse } from '../utils/babelParse'
 import MagicString from 'magic-string'
 import { resolveImport } from './serverPluginModuleRewrite'
 import { SourceMap, mergeSourceMap } from './serverPluginSourceMap'
+import { ServerConfig } from '../config'
 
 const debug = require('debug')('vite:sfc')
 const getEtag = require('etag')
@@ -80,6 +80,8 @@ export const vuePlugin: ServerPlugin = ({
   }
 
   app.use(async (ctx, next) => {
+    // ctx.vue is set by other tools like vitepress so that vite knows to treat
+    // non .vue files as vue files.
     if (!ctx.path.endsWith('.vue') && !ctx.vue) {
       return next()
     }
@@ -91,9 +93,7 @@ export const vuePlugin: ServerPlugin = ({
     // upstream plugins could've already read the file
     const descriptor = await parseSFC(root, filePath, ctx.body)
     if (!descriptor) {
-      debug(`${ctx.url} - 404`)
-      ctx.status = 404
-      return
+      return next()
     }
 
     if (!query.type) {
@@ -136,7 +136,7 @@ export const vuePlugin: ServerPlugin = ({
         publicPath,
         descriptor.styles.some((s) => s.scoped),
         bindingMetadata,
-        config.vueCompilerOptions
+        config
       )
       ctx.body = code
       ctx.map = map
@@ -435,7 +435,7 @@ async function compileSFCMain(
   const compiler = resolveCompiler(root)
   if ((descriptor.script || descriptor.scriptSetup) && compiler.compileScript) {
     try {
-      script = descriptor.script = compiler.compileScript(descriptor)
+      script = compiler.compileScript(descriptor)
     } catch (e) {
       console.error(
         chalk.red(
@@ -459,7 +459,7 @@ async function compileSFCMain(
     }
   }
 
-  if (content) {
+  if (content && defaultExportRE.test(content)) {
     // rewrite export default.
     // fast path: simple regex replacement to avoid full-blown babel parse.
     let replaced = content.replace(defaultExportRE, '$1const __script =')
@@ -470,7 +470,7 @@ async function compileSFCMain(
     }
     code += replaced
   } else {
-    code += `const __script = {}`
+    code += content + `\nconst __script = {}`
   }
 
   let hasScoped = false
@@ -540,7 +540,7 @@ function compileSFCTemplate(
   publicPath: string,
   scoped: boolean,
   bindingMetadata: BindingMetadata | undefined,
-  userOptions: CompilerOptions | undefined
+  { vueCompilerOptions, vueTransformAssetUrls = {} }: ServerConfig
 ): ResultWithMap {
   let cached = vueCache.get(filePath)
   if (cached && cached.template) {
@@ -550,15 +550,19 @@ function compileSFCTemplate(
 
   const start = Date.now()
   const { compileTemplate } = resolveCompiler(root)
+  if (typeof vueTransformAssetUrls === 'object') {
+    vueTransformAssetUrls = {
+      base: path.posix.dirname(publicPath),
+      ...vueTransformAssetUrls
+    }
+  }
   const { code, map, errors } = compileTemplate({
     source: template.content,
     filename: filePath,
     inMap: template.map,
-    transformAssetUrls: {
-      base: path.posix.dirname(publicPath)
-    },
+    transformAssetUrls: vueTransformAssetUrls,
     compilerOptions: {
-      ...userOptions,
+      ...vueCompilerOptions,
       scopeId: scoped ? `data-v-${hash_sum(publicPath)}` : null,
       bindingMetadata,
       runtimeModuleName: resolveVue(root).isLocal

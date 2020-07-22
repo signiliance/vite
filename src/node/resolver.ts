@@ -14,8 +14,9 @@ import {
   moduleFileToIdMap
 } from './server/serverPluginModuleResolve'
 import { resolveOptimizedCacheDir } from './optimizer'
-import { hmrClientPublicPath } from './server/serverPluginHmr'
+import { clientPublicPath } from './server/serverPluginClient'
 import chalk from 'chalk'
+import { isAsset } from './optimizer/pluginAssets'
 
 const debug = require('debug')('vite:resolve')
 const isWin = require('os').platform() === 'win32'
@@ -36,6 +37,7 @@ export interface InternalResolver {
     publicPath: string,
     relativePublicPath: string
   ): { pathname: string; query: string }
+  isPublicRequest(publicPath: string): boolean
 }
 
 export const supportedExts = ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json']
@@ -213,7 +215,7 @@ export function createResolver(
      * Given a fuzzy public path, resolve missing extensions and /index.xxx
      */
     normalizePublicPath(publicPath) {
-      if (publicPath === hmrClientPublicPath) {
+      if (publicPath === clientPublicPath) {
         return publicPath
       }
       // preserve query
@@ -254,7 +256,7 @@ export function createResolver(
 
       // example id: "@babel/runtime/helpers/esm/slicedToArray"
       // see the test case: /playground/TestNormalizePublicPath.vue
-      const id = publicPath.replace(moduleRE, '')
+      const id = cleanPublicPath.replace(moduleRE, '')
       const { scope, name, inPkgPath } = parseNodeModuleId(id)
       if (!inPkgPath) return publicPath
       let filePathPostFix = ''
@@ -321,6 +323,12 @@ export function createResolver(
           (importee.endsWith('/') && !resolved.endsWith('/') ? '/' : ''),
         query: queryMatch ? queryMatch[0] : ''
       }
+    },
+
+    isPublicRequest(publicPath: string) {
+      return resolver
+        .requestToFile(publicPath)
+        .startsWith(path.resolve(root, 'public'))
     }
   }
 
@@ -383,19 +391,21 @@ export function resolveBareModuleRequest(
           // redirect it the optimized copy.
           return resolveBareModuleRequest(root, depId, importer, resolver)
         }
-        // warn against deep imports to optimized dep
-        console.error(
-          chalk.yellow(
-            `\n[vite] Avoid deep import "${id}" (imported by ${importer})\n` +
-              `because "${depId}" has been pre-optimized by vite into a single file.\n` +
-              `Prefer importing directly from the module entry:\n` +
-              chalk.cyan(`\n  import { ... } from "${depId}" \n\n`) +
-              `If the dependency requires deep import to function properly, \n` +
-              `add the deep path to ${chalk.cyan(
-                `optimizeDeps.include`
-              )} in vite.config.js.\n`
+        if (!isAsset(id)) {
+          // warn against deep imports to optimized dep
+          console.error(
+            chalk.yellow(
+              `\n[vite] Avoid deep import "${id}" (imported by ${importer})\n` +
+                `because "${depId}" has been pre-optimized by vite into a single file.\n` +
+                `Prefer importing directly from the module entry:\n` +
+                chalk.cyan(`\n  import { ... } from "${depId}" \n\n`) +
+                `If the dependency requires deep import to function properly, \n` +
+                `add the deep path to ${chalk.cyan(
+                  `optimizeDeps.include`
+                )} in vite.config.js.\n`
+            )
           )
-        )
+        }
       }
 
       // resolve ext for deepImport

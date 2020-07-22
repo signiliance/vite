@@ -15,7 +15,7 @@ import {
 import qs from 'querystring'
 import chalk from 'chalk'
 import { InternalResolver } from '../resolver'
-import { hmrClientPublicPath } from './serverPluginHmr'
+import { clientPublicPath } from './serverPluginClient'
 
 export const debugCSS = require('debug')('vite:css')
 
@@ -62,9 +62,9 @@ export const cssPlugin: ServerPlugin = ({ root, app, watcher, resolver }) => {
         vueStyleUpdate(styleImport)
         return
       }
-      // handle HMR for module.css
+      // handle HMR for module css
       // it cannot be handled as normal css because the js exports may change
-      if (filePath.endsWith('.module.css')) {
+      if (filePath.includes('.module')) {
         moduleCssUpdate(filePath, resolver)
       }
 
@@ -178,7 +178,7 @@ export function codegenCss(
   modules?: Record<string, string>
 ): string {
   let code =
-    `import { updateStyle } from "${hmrClientPublicPath}"\n` +
+    `import { updateStyle } from "${clientPublicPath}"\n` +
     `const css = ${JSON.stringify(css)}\n` +
     `updateStyle(${JSON.stringify(id)}, css)\n`
   if (modules) {

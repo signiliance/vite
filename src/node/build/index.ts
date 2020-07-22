@@ -20,10 +20,10 @@ import { createBuildResolvePlugin } from './buildPluginResolve'
 import { createBuildHtmlPlugin } from './buildPluginHtml'
 import { createBuildCssPlugin } from './buildPluginCss'
 import { createBuildAssetPlugin } from './buildPluginAsset'
-import { createEsbuildPlugin } from './buildPluginEsbuild'
+import { createEsbuildPlugin, esbuildMinifyPlugin } from './buildPluginEsbuild'
 import { createReplacePlugin } from './buildPluginReplace'
 import { stopService } from '../esbuildService'
-import { BuildConfig } from '../config'
+import { BuildConfig, defaultDefines } from '../config'
 import { createBuildJsTransformPlugin } from '../transform'
 import hash_sum from 'hash-sum'
 import { resolvePostcssOptions } from '../utils/cssUtils'
@@ -146,9 +146,7 @@ export async function createBaseRollupPlugins(
     // vite:resolve
     createBuildResolvePlugin(root, resolver),
     // vite:esbuild
-    enableEsbuild
-      ? await createEsbuildPlugin(options.minify === 'esbuild', options.jsx)
-      : null,
+    enableEsbuild ? await createEsbuildPlugin(options.jsx) : null,
     // vue
     enableRollupPluginVue ? await createVuePlugin(root, options) : null,
     require('@rollup/plugin-json')({
@@ -186,7 +184,8 @@ async function createVuePlugin(
     rollupPluginVueOptions,
     cssPreprocessOptions,
     cssModuleOptions,
-    vueCompilerOptions
+    vueCompilerOptions,
+    vueTransformAssetUrls = {}
   }: BuildConfig
 ) {
   const {
@@ -194,11 +193,16 @@ async function createVuePlugin(
     plugins: postcssPlugins
   } = await resolvePostcssOptions(root, true)
 
+  if (typeof vueTransformAssetUrls === 'object') {
+    vueTransformAssetUrls = {
+      includeAbsolute: true,
+      ...vueTransformAssetUrls
+    }
+  }
+
   return require('rollup-plugin-vue')({
     ...rollupPluginVueOptions,
-    transformAssetUrls: {
-      includeAbsolute: true
-    },
+    transformAssetUrls: vueTransformAssetUrls,
     postcssOptions,
     postcssPlugins,
     preprocessStyles: true,
@@ -241,6 +245,7 @@ export async function build(options: BuildConfig): Promise<BuildResult> {
     shouldPreload = null,
     env = {},
     mode = 'production',
+    define: userDefineReplacements,
     cssPreprocessOptions,
     cssModuleOptions = {}
   } = options
@@ -323,6 +328,8 @@ export async function build(options: BuildConfig): Promise<BuildResult> {
         (id) => /\.(j|t)sx?$/.test(id) || id.startsWith(`/vite/`),
         {
           ...userEnvReplacements,
+          ...defaultDefines,
+          ...userDefineReplacements,
           'import.meta.env.BASE_URL': JSON.stringify(publicBasePath),
           'import.meta.env.MODE': JSON.stringify(mode),
           'import.meta.env.DEV': String(mode === 'development'),
@@ -357,8 +364,10 @@ export async function build(options: BuildConfig): Promise<BuildResult> {
       // this is the default which has better compression, but slow
       // the user can opt-in to use esbuild which is much faster but results
       // in ~8-10% larger file size.
-      minify && minify !== 'esbuild'
-        ? require('rollup-plugin-terser').terser()
+      minify
+        ? minify === 'esbuild'
+          ? esbuildMinifyPlugin
+          : require('rollup-plugin-terser').terser()
         : undefined
     ].filter(Boolean)
   })

@@ -18,11 +18,17 @@ import {
   importeeMap,
   ensureMapEntry,
   rewriteFileWithHMR,
-  hmrClientPublicPath,
   hmrDirtyFilesMap,
   latestVersionsMap
 } from './serverPluginHmr'
-import { readBody, cleanUrl, isExternalUrl, bareImportRE } from '../utils'
+import { clientPublicPath } from './serverPluginClient'
+import {
+  readBody,
+  cleanUrl,
+  isExternalUrl,
+  bareImportRE,
+  removeQueryTimestamp
+} from '../utils'
 import chalk from 'chalk'
 import { isCSSRequest } from '../utils/cssUtils'
 import { envPublicPath } from './serverPluginEnv'
@@ -60,9 +66,9 @@ export const moduleRewritePlugin: ServerPlugin = ({
       !isCSSRequest(ctx.path) &&
       !ctx.url.endsWith('.map') &&
       // skip internal client
-      !ctx.path.startsWith(hmrClientPublicPath) &&
-      // only need to rewrite for <script> part in vue files
-      !((ctx.path.endsWith('.vue') || ctx.vue) && ctx.query.type != null)
+      ctx.path !== clientPublicPath &&
+      // need to rewrite for <script>\<template> part in vue files
+      !((ctx.path.endsWith('.vue') || ctx.vue) && ctx.query.type === 'style')
     ) {
       const content = await readBody(ctx.body)
       if (!ctx.query.t && rewriteCache.has(content)) {
@@ -76,7 +82,9 @@ export const moduleRewritePlugin: ServerPlugin = ({
         // before we perform hmr analysis.
         // on the other hand, static import is guaranteed to have extension
         // because they must all have gone through module rewrite.
-        const importer = resolver.normalizePublicPath(ctx.path)
+        const importer = removeQueryTimestamp(
+          resolver.normalizePublicPath(ctx.url)
+        )
         ctx.body = rewriteImports(
           root,
           content!,
@@ -173,7 +181,7 @@ export function rewriteImports(
           if (
             importee !== importer &&
             // no need to track hmr client or module dependencies
-            importee !== hmrClientPublicPath
+            importee !== clientPublicPath
           ) {
             currentImportees.add(importee)
             debugHmr(`        ${importer} imports ${importee}`)

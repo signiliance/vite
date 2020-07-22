@@ -96,6 +96,13 @@ describe('vite', () => {
       )
     })
 
+    test('transform asset urls', async () => {
+      const image = await getEl('.relative-import')
+      expect(await image.evaluate((el) => el.getAttribute('src'))).toMatch(
+        await image.evaluate((el) => el.getAttribute('data-src'))
+      )
+    })
+
     test('env variables', async () => {
       const mode = isBuild ? 'production' : 'development'
 
@@ -511,11 +518,13 @@ describe('vite', () => {
 
     test('json', async () => {
       expect(await getText('.json')).toMatch('this is json')
+      expect(await getText('.json-named-exports')).toMatch('this is json')
       if (!isBuild) {
         await updateFile('json/testJsonImport.json', (c) =>
           c.replace('this is json', 'with hmr')
         )
         await expectByPolling(() => getText('.json'), 'with hmr')
+        await expectByPolling(() => getText('.json-named-exports'), 'with hmr')
       }
     })
 
